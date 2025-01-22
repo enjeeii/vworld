@@ -1,106 +1,123 @@
 # -*- coding: utf-8 -*-
-import sys
-import pygame
-import os
-import enum
-import random
+import curses
+import time
+#
+# import game
+# import hint
 
-FRAME_FPS = 5
-MOVE_SPEED = 5
+GAME_HEIGHT = 20
+GAME_LENGTH = 40
+FRAME = 25
 
-TILES_SIZE = 20
-WINDOW_WIDTH = 32
-WINDOW_HEIGHT = 24
-WINDOW_WIDTH_SIZE = WINDOW_WIDTH * TILES_SIZE
-WINDOW_HEIGHT_SIZE = WINDOW_HEIGHT * TILES_SIZE
 
-MAP_WIDTH = 100
-MAP_HEIGHT = 100
+class IPanel():
+    def enter(self): pass
+    def exit(self): pass
+    def draw(self): pass
 
-COMMAND_UP = 'up'
-COMMAND_DOWN = 'down'
-COMMAND_LEFT = 'left'
-COMMAND_RIGHT = 'right'
+class MainPanel(IPanel):
+    def __init__(self, w, left):
+        self.w = w
 
-class TilesType(enum.IntEnum):
-    UNKNOW = 0
-    GRASS = 1
-    ROCKS = 2
+        self.w.addstr(1, left, '目标: 得分！')
+        self.w.addstr(2, left, 'Q: 退出')
+        self.w.addstr(3, left, 'R: 重新开始')
+        self.w.addstr(4, left, 'P: 暂停')
 
-class Map():
+    def enter(self):
+        self.w.refresh()
+
+    def exit(self):
+        self.w.clear()
+
+class Role():
+    def __init__(self, y, x, max_y, max_x):
+        self.char = 'a'
+        self.max_y = max_y
+        self.max_x = max_x
+
+        self.y = y
+        self.x = x
+
+    def draw(self):
+        return self.y, self.x, self.char
+
+    def up(self):
+        self.y = self.y - 1 if self.y > 1 else self.y
+
+    def down(self):
+        self.y = self.y + 1 if self.y < self.max_y - 2 else self.y
+
+    def left(self):
+        self.x = self.x - 1 if self.x > 1 else self.x
+
+    def right(self):
+        self.x = self.x + 1 if self.x < self.max_x - 2 else self.x
+
+class GamePanel(IPanel):
+    def __init__(self, w):
+        self.w = w
+        self.role = Role(int(GAME_HEIGHT/2), int(GAME_LENGTH/2), GAME_HEIGHT, GAME_LENGTH)
+
+    def enter(self):
+        pass
+
+    def exit(self):
+        pass
+
+    def draw(self):
+        self.w.clear()
+
+        self.w.addstr(*self.role.draw())
+        self.w.box()
+
+        self.w.refresh()
+
+class Scene():
     def __init__(self):
-        self.tiles = []
-        self.surface = pygame.Surface((MAP_WIDTH * TILES_SIZE, MAP_HEIGHT * TILES_SIZE), pygame.HWSURFACE)
+        self.panels = []
 
-        grassImg = pygame.image.load(os.path.join('resources', 'pictures', 'grass.jpg')).convert()
-        rocksImg = pygame.image.load(os.path.join('resources', 'pictures', 'rocks.jpg')).convert()
-        grassTile = pygame.transform.scale(grassImg, (TILES_SIZE, TILES_SIZE))
-        rocksTile = pygame.transform.scale(rocksImg, (TILES_SIZE, TILES_SIZE))
+    def push(self, panel):
+        panel.enter()
+        self.panels.append(panel)
 
-        for row in range(MAP_HEIGHT):
-            self.tiles.append([])
-            for col in range(MAP_WIDTH):
-                self.tiles[row].append(random.choice([TilesType.GRASS, TilesType.ROCKS]))
+    def pop(self):
+        if len(self.panels):
+            p = self.panels.pop()
+            p.exit()
 
-                tile = None
-                if self.tiles[row][col] == TilesType.GRASS:
-                    tile = grassTile
-                elif self.tiles[row][col] == TilesType.ROCKS:
-                    tile = rocksTile
+    def draw(self):
+        for p in self.panels:
+            p.draw()
 
-                if tile:
-                    self.surface.blit(tile, (col * TILES_SIZE, row * TILES_SIZE))
 
-class MapRender():
-    def __init__(self):
-        self.left = 0
-        self.top = 0
-        self.source = Map()
+def main(ss):
+    # 隐藏光标
+    curses.curs_set(0)
 
-    def move_left(self):
-        self.left = max(self.left - MOVE_SPEED, 0)
+    game_top = int((curses.LINES - GAME_HEIGHT) * 0.8)
+    game_left = int((curses.COLS - GAME_LENGTH) * 0.4)
 
-    def move_right(self):
-        self.left = min(self.left + MOVE_SPEED, (MAP_WIDTH - WINDOW_WIDTH) * TILES_SIZE)
+    main_panel = MainPanel(ss, game_left)
+    game_panel = GamePanel(curses.newwin(GAME_HEIGHT, GAME_LENGTH, game_top, game_left))
 
-    def move_up(self):
-        self.top = max(self.top - MOVE_SPEED, 0)
+    scene = Scene()
+    scene.push(main_panel)
+    scene.push(game_panel)
 
-    def move_down(self):
-        self.top = min(self.top + MOVE_SPEED, (MAP_HEIGHT - WINDOW_HEIGHT) * TILES_SIZE)
-
-    def draw(self, screen: pygame.Surface):
-        screen.blit(self.source.surface, pygame.Rect(self.left, self.top, WINDOW_WIDTH_SIZE, WINDOW_HEIGHT_SIZE))
+    while True:
+        scene.draw()
+        ch = ss.getch()
+        if ch == ord('q') or ch == ord('Q'):
+            break
+        if ch == curses.KEY_LEFT:
+            game_panel.role.left()
+        if ch == curses.KEY_RIGHT:
+            game_panel.role.right()
+        if ch == curses.KEY_UP:
+            game_panel.role.up()
+        if ch == curses.KEY_DOWN:
+            game_panel.role.down()
 
 if __name__ == '__main__':
-    pygame.init()
-    screen = pygame.display.set_mode((WINDOW_WIDTH_SIZE, WINDOW_HEIGHT_SIZE))
-    clock = pygame.time.Clock()
-
-    mapRender = MapRender()
-
-    while 1:
-        now_t = clock.tick(FRAME_FPS)
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-
-            if event.type == pygame.KEYDOWN:
-                print('deal event key down.')
-                if event.key == pygame.K_w:
-                    print('up')
-                    mapRender.move_up()
-                if event.key == pygame.K_a:
-                    print('left')
-                    mapRender.move_left()
-                if event.key == pygame.K_s:
-                    print('down')
-                    mapRender.move_down()
-                if event.key == pygame.K_d:
-                    print('right')
-                    mapRender.move_right()
-
-        mapRender.draw(screen)
-        pygame.display.flip()
+    curses.wrapper(main)
